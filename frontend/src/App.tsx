@@ -46,14 +46,14 @@ function App() {
     setIsLoadingSubjects(true);
     try {
       const subjectList = await api.getSubjects();
-      
+
       // Convert to SubjectWithUnits
       const subjectsWithUnits: SubjectWithUnits[] = subjectList.map((s) => ({
         ...s,
         units: [],
         expanded: false,
       }));
-      
+
       setSubjects(subjectsWithUnits);
     } catch (error) {
       console.error('Failed to load subjects:', error);
@@ -80,7 +80,7 @@ function App() {
   const loadUnits = async (subjectId: number) => {
     try {
       const units = await api.getUnits(subjectId);
-      
+
       const unitsWithTopics: UnitWithTopics[] = units.map((u) => ({
         ...u,
         topics: [],
@@ -156,6 +156,36 @@ function App() {
     []
   );
 
+  const handleCreateSubject = useCallback(async (name: string) => {
+    try {
+      await api.createSubject(name);
+      await loadSubjects();
+    } catch (error) {
+      console.error('Failed to create subject:', error);
+      throw error;
+    }
+  }, []);
+
+  const handleCreateUnit = useCallback(async (subjectId: number, title: string) => {
+    try {
+      await api.createUnit(subjectId, title);
+      await loadUnits(subjectId);
+    } catch (error) {
+      console.error('Failed to create unit:', error);
+      throw error;
+    }
+  }, []);
+
+  const handleCreateTopic = useCallback(async (subjectId: number, unitId: number, title: string) => {
+    try {
+      await api.createTopic(subjectId, unitId, title);
+      await loadTopics(subjectId, unitId);
+    } catch (error) {
+      console.error('Failed to create topic:', error);
+      throw error;
+    }
+  }, []);
+
   const handleSendMessage = useCallback(
     async (messageText: string) => {
       if (!context.subject || !context.topic) return;
@@ -230,6 +260,9 @@ function App() {
         onToggleUnit={handleToggleUnit}
         onSelectTopic={handleSelectTopic}
         onRefresh={loadSubjects}
+        onCreateSubject={handleCreateSubject}
+        onCreateUnit={handleCreateUnit}
+        onCreateTopic={handleCreateTopic}
       />
 
       {/* Main Chat Area */}

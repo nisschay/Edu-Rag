@@ -4,7 +4,9 @@
  * Expandable tree navigation for subjects, units, and topics.
  */
 
+import { useState } from 'react';
 import type { SubjectWithUnits, UnitWithTopics, Topic } from '../types';
+import { AddItemForm } from './AddItemForm';
 
 interface SubjectTreeProps {
   subjects: SubjectWithUnits[];
@@ -12,6 +14,8 @@ interface SubjectTreeProps {
   onToggleSubject: (subjectId: number) => void;
   onToggleUnit: (subjectId: number, unitId: number) => void;
   onSelectTopic: (subject: SubjectWithUnits, unit: UnitWithTopics, topic: Topic) => void;
+  onCreateUnit: (subjectId: number, title: string) => Promise<void>;
+  onCreateTopic: (subjectId: number, unitId: number, title: string) => Promise<void>;
 }
 
 export function SubjectTree({
@@ -20,12 +24,42 @@ export function SubjectTree({
   onToggleSubject,
   onToggleUnit,
   onSelectTopic,
+  onCreateUnit,
+  onCreateTopic,
 }: SubjectTreeProps) {
+  const [addingUnitFor, setAddingUnitFor] = useState<number | null>(null);
+  const [addingTopicFor, setAddingTopicFor] = useState<{ subjectId: number; unitId: number } | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateUnit = async (subjectId: number, title: string) => {
+    setIsCreating(true);
+    try {
+      await onCreateUnit(subjectId, title);
+      setAddingUnitFor(null);
+    } catch (error) {
+      console.error('Failed to create unit:', error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleCreateTopic = async (subjectId: number, unitId: number, title: string) => {
+    setIsCreating(true);
+    try {
+      await onCreateTopic(subjectId, unitId, title);
+      setAddingTopicFor(null);
+    } catch (error) {
+      console.error('Failed to create topic:', error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   if (subjects.length === 0) {
     return (
       <div className="p-4 text-center text-gray-500 text-sm">
         <p>No subjects yet</p>
-        <p className="text-xs mt-1">Create one using the API</p>
+        <p className="text-xs mt-1">Click + above to add one</p>
       </div>
     );
   }
@@ -41,9 +75,8 @@ export function SubjectTree({
               text-gray-300 hover:bg-dark-600 transition-colors group"
           >
             <svg
-              className={`w-4 h-4 text-gray-500 transition-transform ${
-                subject.expanded ? 'rotate-90' : ''
-              }`}
+              className={`w-4 h-4 text-gray-500 transition-transform ${subject.expanded ? 'rotate-90' : ''
+                }`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -69,75 +102,117 @@ export function SubjectTree({
           {/* Units */}
           {subject.expanded && (
             <div className="ml-4">
-              {subject.units.length === 0 ? (
+              {subject.units.length === 0 && addingUnitFor !== subject.id && (
                 <div className="px-4 py-2 text-xs text-gray-600">No units</div>
-              ) : (
-                subject.units.map((unit) => (
-                  <div key={unit.id}>
-                    {/* Unit */}
-                    <button
-                      onClick={() => onToggleUnit(subject.id, unit.id)}
-                      className="w-full flex items-center gap-2 px-4 py-1.5 text-left
-                        text-gray-400 hover:bg-dark-600 transition-colors text-sm"
-                    >
-                      <svg
-                        className={`w-3 h-3 text-gray-600 transition-transform ${
-                          unit.expanded ? 'rotate-90' : ''
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                      <svg
-                        className="w-4 h-4 text-gray-500"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                        />
-                      </svg>
-                      <span className="truncate">{unit.title}</span>
-                    </button>
+              )}
 
-                    {/* Topics */}
-                    {unit.expanded && (
-                      <div className="ml-4">
-                        {unit.topics.length === 0 ? (
-                          <div className="px-4 py-1.5 text-xs text-gray-600">No topics</div>
-                        ) : (
-                          unit.topics.map((topic) => (
-                            <button
-                              key={topic.id}
-                              onClick={() => onSelectTopic(subject, unit, topic)}
-                              className={`w-full flex items-center gap-2 px-4 py-1.5 text-left
-                                text-sm transition-colors ${
-                                  selectedTopicId === topic.id
-                                    ? 'bg-accent-primary/20 text-accent-primary'
-                                    : 'text-gray-500 hover:bg-dark-600 hover:text-gray-300'
-                                }`}
-                            >
-                              <svg
-                                className="w-3 h-3"
-                                fill="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <circle cx="12" cy="12" r="4" />
-                              </svg>
-                              <span className="truncate">{topic.title}</span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))
+              {subject.units.map((unit) => (
+                <div key={unit.id}>
+                  {/* Unit */}
+                  <button
+                    onClick={() => onToggleUnit(subject.id, unit.id)}
+                    className="w-full flex items-center gap-2 px-4 py-1.5 text-left
+                      text-gray-400 hover:bg-dark-600 transition-colors text-sm"
+                  >
+                    <svg
+                      className={`w-3 h-3 text-gray-600 transition-transform ${unit.expanded ? 'rotate-90' : ''
+                        }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <svg
+                      className="w-4 h-4 text-gray-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                      />
+                    </svg>
+                    <span className="truncate">{unit.title}</span>
+                  </button>
+
+                  {/* Topics */}
+                  {unit.expanded && (
+                    <div className="ml-4">
+                      {unit.topics.length === 0 && !(addingTopicFor?.unitId === unit.id) && (
+                        <div className="px-4 py-1.5 text-xs text-gray-600">No topics</div>
+                      )}
+
+                      {unit.topics.map((topic) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => onSelectTopic(subject, unit, topic)}
+                          className={`w-full flex items-center gap-2 px-4 py-1.5 text-left
+                            text-sm transition-colors ${selectedTopicId === topic.id
+                              ? 'bg-accent-primary/20 text-accent-primary'
+                              : 'text-gray-500 hover:bg-dark-600 hover:text-gray-300'
+                            }`}
+                        >
+                          <svg
+                            className="w-3 h-3"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle cx="12" cy="12" r="4" />
+                          </svg>
+                          <span className="truncate">{topic.title}</span>
+                        </button>
+                      ))}
+
+                      {/* Add Topic Form */}
+                      {addingTopicFor?.subjectId === subject.id && addingTopicFor?.unitId === unit.id ? (
+                        <div className="ml-2">
+                          <AddItemForm
+                            placeholder="Topic title..."
+                            onSubmit={(title) => handleCreateTopic(subject.id, unit.id, title)}
+                            onCancel={() => setAddingTopicFor(null)}
+                            isLoading={isCreating}
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setAddingTopicFor({ subjectId: subject.id, unitId: unit.id })}
+                          className="w-full flex items-center gap-2 px-4 py-1.5 text-left
+                            text-xs text-gray-600 hover:text-accent-primary hover:bg-dark-600 transition-colors"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          <span>Add topic</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Add Unit Form */}
+              {addingUnitFor === subject.id ? (
+                <AddItemForm
+                  placeholder="Unit title..."
+                  onSubmit={(title) => handleCreateUnit(subject.id, title)}
+                  onCancel={() => setAddingUnitFor(null)}
+                  isLoading={isCreating}
+                />
+              ) : (
+                <button
+                  onClick={() => setAddingUnitFor(subject.id)}
+                  className="w-full flex items-center gap-2 px-4 py-1.5 text-left
+                    text-xs text-gray-600 hover:text-accent-primary hover:bg-dark-600 transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Add unit</span>
+                </button>
               )}
             </div>
           )}
@@ -146,3 +221,4 @@ export function SubjectTree({
     </div>
   );
 }
+

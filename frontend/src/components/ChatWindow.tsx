@@ -5,10 +5,11 @@
  * Shows placeholder when no topic is selected.
  */
 
-import { useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Message, ActiveContext } from '../types';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
+import * as api from '../api/client';
 
 interface ChatWindowProps {
   messages: Message[];
@@ -19,37 +20,130 @@ interface ChatWindowProps {
 
 export function ChatWindow({ messages, context, onSendMessage, isLoading }: ChatWindowProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const hasContext = context.subject && context.topic;
+
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !context.subject || !context.unit || !context.topic) return;
+
+    setIsUploading(true);
+    setUploadStatus('Uploading file...');
+
+    try {
+      await api.uploadFile(
+        context.subject.id,
+        context.unit.id,
+        context.topic.id,
+        file
+      );
+
+      setUploadStatus('Processing chunks...');
+      await api.processChunks(
+        context.subject.id,
+        context.unit.id,
+        context.topic.id
+      );
+
+      setUploadStatus('Creating embeddings...');
+      await api.embedChunks(
+        context.subject.id,
+        context.unit.id,
+        context.topic.id
+      );
+
+      setUploadStatus('✓ File processed successfully!');
+      setTimeout(() => setUploadStatus(null), 3000);
+    } catch (error) {
+      console.error('Upload failed:', error);
+      setUploadStatus('✗ Upload failed. Please try again.');
+      setTimeout(() => setUploadStatus(null), 3000);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-dark-800">
       {/* Header */}
       <div className="px-6 py-4 border-b border-dark-600 bg-dark-800">
-        {hasContext ? (
-          <div>
-            <h1 className="text-lg font-semibold text-gray-100">
-              {context.topic?.title}
+        <div className="flex items-center justify-between">
+          {hasContext ? (
+            <div>
+              <h1 className="text-lg font-semibold text-gray-100">
+                {context.topic?.title}
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                {context.subject?.name}
+                {context.unit && (
+                  <>
+                    <span className="mx-2">→</span>
+                    {context.unit.title}
+                  </>
+                )}
+              </p>
+            </div>
+          ) : (
+            <h1 className="text-lg font-semibold text-gray-400">
+              Education RAG
             </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {context.subject?.name}
-              {context.unit && (
-                <>
-                  <span className="mx-2">→</span>
-                  {context.unit.title}
-                </>
+          )}
+
+          {/* Upload Button */}
+          {hasContext && (
+            <div className="flex items-center gap-3">
+              {uploadStatus && (
+                <span className={`text-sm ${uploadStatus.startsWith('✓') ? 'text-green-400' :
+                    uploadStatus.startsWith('✗') ? 'text-red-400' :
+                      'text-gray-400'
+                  }`}>
+                  {uploadStatus}
+                </span>
               )}
-            </p>
-          </div>
-        ) : (
-          <h1 className="text-lg font-semibold text-gray-400">
-            Education RAG
-          </h1>
-        )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,.md,.docx"
+                onChange={handleFileUpload}
+                className="hidden"
+                disabled={isUploading}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg
+                  bg-dark-700 border border-dark-500 text-gray-300
+                  hover:bg-dark-600 hover:text-white transition-colors
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Upload textbook or notes"
+              >
+                {isUploading ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                )}
+                <span>Upload</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Messages Area */}
@@ -111,7 +205,7 @@ export function ChatWindow({ messages, context, onSendMessage, isLoading }: Chat
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
-            
+
             {isLoading && (
               <div className="flex justify-start mb-4">
                 <div className="bg-dark-700 rounded-2xl rounded-bl-md px-4 py-3">
@@ -123,7 +217,7 @@ export function ChatWindow({ messages, context, onSendMessage, isLoading }: Chat
                 </div>
               </div>
             )}
-            
+
             <div ref={messagesEndRef} />
           </div>
         )}

@@ -4,8 +4,10 @@
  * Left panel with subject/unit/topic navigation tree.
  */
 
+import { useState } from 'react';
 import type { SubjectWithUnits, UnitWithTopics, Topic } from '../types';
 import { SubjectTree } from './SubjectTree';
+import { AddItemForm } from './AddItemForm';
 
 interface SidebarProps {
   subjects: SubjectWithUnits[];
@@ -15,6 +17,9 @@ interface SidebarProps {
   onToggleUnit: (subjectId: number, unitId: number) => void;
   onSelectTopic: (subject: SubjectWithUnits, unit: UnitWithTopics, topic: Topic) => void;
   onRefresh: () => void;
+  onCreateSubject: (name: string) => Promise<void>;
+  onCreateUnit: (subjectId: number, title: string) => Promise<void>;
+  onCreateTopic: (subjectId: number, unitId: number, title: string) => Promise<void>;
 }
 
 export function Sidebar({
@@ -25,7 +30,25 @@ export function Sidebar({
   onToggleUnit,
   onSelectTopic,
   onRefresh,
+  onCreateSubject,
+  onCreateUnit,
+  onCreateTopic,
 }: SidebarProps) {
+  const [showAddSubject, setShowAddSubject] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateSubject = async (name: string) => {
+    setIsCreating(true);
+    try {
+      await onCreateSubject(name);
+      setShowAddSubject(false);
+    } catch (error) {
+      console.error('Failed to create subject:', error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <div className="w-72 h-full flex flex-col bg-dark-900 border-r border-dark-600">
       {/* Header */}
@@ -49,30 +72,56 @@ export function Sidebar({
             </div>
             <span className="font-semibold text-gray-100">EduRAG</span>
           </div>
-          
-          <button
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="p-2 rounded-lg hover:bg-dark-700 text-gray-400 
-              hover:text-gray-200 transition-colors disabled:opacity-50"
-            title="Refresh subjects"
-          >
-            <svg
-              className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+
+          <div className="flex items-center gap-1">
+            {/* Add Subject Button */}
+            <button
+              onClick={() => setShowAddSubject(true)}
+              disabled={isLoading || showAddSubject}
+              className="p-2 rounded-lg hover:bg-dark-700 text-gray-400 
+                hover:text-accent-primary transition-colors disabled:opacity-50"
+              title="Add subject"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </button>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+
+            {/* Refresh Button */}
+            <button
+              onClick={onRefresh}
+              disabled={isLoading}
+              className="p-2 rounded-lg hover:bg-dark-700 text-gray-400 
+                hover:text-gray-200 transition-colors disabled:opacity-50"
+              title="Refresh subjects"
+            >
+              <svg
+                className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Add Subject Form */}
+      {showAddSubject && (
+        <AddItemForm
+          placeholder="Subject name..."
+          onSubmit={handleCreateSubject}
+          onCancel={() => setShowAddSubject(false)}
+          isLoading={isCreating}
+        />
+      )}
 
       {/* Navigation Tree */}
       <div className="flex-1 overflow-y-auto">
@@ -87,6 +136,8 @@ export function Sidebar({
             onToggleSubject={onToggleSubject}
             onToggleUnit={onToggleUnit}
             onSelectTopic={onSelectTopic}
+            onCreateUnit={onCreateUnit}
+            onCreateTopic={onCreateTopic}
           />
         )}
       </div>
@@ -100,3 +151,4 @@ export function Sidebar({
     </div>
   );
 }
+
