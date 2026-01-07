@@ -1,0 +1,53 @@
+# Core Dependencies - Phase 0
+# =========================
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6  # For file uploads
+
+# Database ORM
+sqlalchemy>=2.0.25
+
+# Configuration Management
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+email-validator>=2.1.0  # For Pydantic EmailStr
+
+# Development Tools
+# =================
+python-dotenv>=1.0.0
+httpx>=0.26.0  # For TestClient
+
+# Phase 2: Text Extraction
+# ========================
+PyPDF2>=3.0.0  # PDF text extraction
+python-docx>=1.1.0  # DOCX text extraction
+python-pptx>=0.6.23  # PPTX text extraction
+
+# Phase 3-4: RAG (Chunking, Embeddings, Retrieval)
+# ================================================
+tiktoken>=0.5.0  # Token counting for chunking
+openai>=1.10.0  # Embedding generation
+faiss-cpu>=1.7.4  # Vector similarity search
+numpy>=1.24.0  # Array operations for FAISS
+
+# Future Phase Dependencies (commented out)
+# =========================================
+
+# Phase 1: Auth
+# httpx>=0.26.0  # For OAuth
+# python-jose[cryptography]>=3.3.0  # JWT handling
+# passlib[bcrypt]>=1.7.4  # Password hashing
+
+# Phase 3: RAG
+# openai>=1.10.0  # LLM integration
+# chromadb>=0.4.0  # Vector database
+# langchain>=0.1.0  # LLM orchestration
+
+# Phase 4: Testing & Quality
+# pytest>=8.0.0
+# pytest-asyncio>=0.23.0
+# httpx>=0.26.0  # For TestClient
+# ruff>=0.1.0  # Linting
+# mypy>=1.8.0  # Type checking
