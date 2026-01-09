@@ -49,7 +49,7 @@ class EmbeddingGenerator:
         
         logger.info(f"EmbeddingGenerator initialized with model: {self.model}")
     
-    @retry_on_exception(max_attempts=3, exceptions=(Exception,))
+    @retry_on_exception(max_attempts=4, delay=2.0, backoff=2.0, exceptions=(Exception,), rate_limit_delay=30.0)
     def embed_text(self, text: str) -> list[float]:
         """
         Generate embedding for a single text with retry logic and timeout.
@@ -82,7 +82,7 @@ class EmbeddingGenerator:
         
         return embedding
     
-    @retry_on_exception(max_attempts=3, exceptions=(Exception,))
+    @retry_on_exception(max_attempts=4, delay=2.0, backoff=2.0, exceptions=(Exception,), rate_limit_delay=30.0)
     def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
         """
         Generate embeddings for multiple texts in batch.

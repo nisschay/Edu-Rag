@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.deps import CurrentUser, DbSession
 from app.schemas.chat import ChatRequest, ChatResponse, SourceReference
 from app.services import subject_service, unit_service, topic_service, chat_service
+from app.models.unit import Unit
 
 logger = logging.getLogger(__name__)
 

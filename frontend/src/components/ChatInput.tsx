@@ -44,7 +44,7 @@ export function ChatInput({ onSend, onUpload, disabled, placeholder, isLoading }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 border-t border-dark-600 bg-dark-800">
+    <form onSubmit={handleSubmit} className="p-4 bg-dark-800">
       <div className="flex items-end gap-3 max-w-4xl mx-auto">
         <div className="flex-1 relative flex gap-2">
           {/* Upload Button */}

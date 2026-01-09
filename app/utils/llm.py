@@ -53,7 +53,7 @@ class LLMGenerator:
         
         logger.info(f"LLMGenerator initialized with model: {self.model_name}")
     
-    @retry_on_exception(max_attempts=2, delay=1.0, backoff=2.0, exceptions=(Exception,))
+    @retry_on_exception(max_attempts=4, delay=2.0, backoff=2.0, exceptions=(Exception,), rate_limit_delay=30.0)
     def _generate_content_with_retry(
         self,
         full_prompt: str,

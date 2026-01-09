@@ -3,6 +3,7 @@
  * 
  * Main chat area with message history and input.
  * Supports flexible chat (no topic) and file uploads with location picking.
+ * Files are displayed above the input like ChatGPT/Claude.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -27,7 +28,7 @@ export function ChatWindow({ messages, context, subjects, onSendMessage, isLoadi
   // Unit Status & Files
   const [unitState, setUnitState] = useState<UnitState | null>(null);
   const [topicFiles, setTopicFiles] = useState<ApiFile[]>([]);
-  const [showFiles, setShowFiles] = useState(false);
+  const [showAllFiles, setShowAllFiles] = useState(false);
 
   // File Upload State (Restored)
   const [isUploading, setIsUploading] = useState(false);
@@ -166,16 +167,6 @@ export function ChatWindow({ messages, context, subjects, onSendMessage, isLoadi
               )}
             </p>
           </div>
-
-          {/* File List Toggle */}
-          {hasContext && (
-            <button
-              onClick={() => setShowFiles(!showFiles)}
-              className="text-sm text-accent-primary hover:text-accent-hover underline"
-            >
-              {showFiles ? 'Hide Files' : `Show Files (${topicFiles.length})`}
-            </button>
-          )}
         </div>
 
         {/* Unit Status Banner */}
@@ -201,26 +192,6 @@ export function ChatWindow({ messages, context, subjects, onSendMessage, isLoadi
             </span>
           </div>
         )}
-
-        {/* File List Panel */}
-        {showFiles && hasContext && (
-          <div className="bg-dark-700 rounded-lg p-3 mt-2 text-sm text-gray-300">
-            <h3 className="font-medium text-gray-400 mb-2 uppercase text-xs">Files in {context.topic?.title}</h3>
-            {topicFiles.length === 0 ? (
-              <p className="text-gray-500 italic">No files uploaded.</p>
-            ) : (
-              <ul className="space-y-1">
-                {topicFiles.map(f => (
-                  <li key={f.id} className="flex justify-between">
-                    <span>{f.filename}</span>
-                    <span className="text-xs text-gray-500">{(f.file_size / 1024).toFixed(1)} KB</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
       </div>
 
       {/* Messages Area */}
@@ -266,14 +237,99 @@ export function ChatWindow({ messages, context, subjects, onSendMessage, isLoadi
         )}
       </div>
 
-      {/* Input */}
-      <ChatInput
-        onSend={onSendMessage}
-        onUpload={hasContext || subjects.length > 0 ? handleUploadClick : undefined}
-        disabled={subjects.length === 0}
-        isLoading={isLoading}
-        placeholder={hasContext ? `Message about ${context.topic?.title}...` : "Type a message..."}
-      />
+      {/* Input Area with File Attachments Above */}
+      <div className="border-t border-dark-600 bg-dark-800">
+        {/* Attached Files Preview (ChatGPT/Claude style) */}
+        {hasContext && topicFiles.length > 0 && (
+          <div className="px-4 pt-3">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex flex-wrap gap-2">
+                {(showAllFiles ? topicFiles : topicFiles.slice(0, 3)).map(f => (
+                  <div
+                    key={f.id}
+                    className="flex items-center gap-2 bg-dark-700 border border-dark-500 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {/* File icon */}
+                    <div className="w-8 h-8 rounded bg-dark-600 flex items-center justify-center flex-shrink-0">
+                      {f.file_type === 'pdf' ? (
+                        <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-gray-200 truncate max-w-[150px]" title={f.filename}>
+                        {f.filename}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {(f.file_size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                    {/* Status indicator */}
+                    {f.status === 'ready' ? (
+                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    ) : f.status === 'processing' ? (
+                      <svg className="w-4 h-4 text-blue-400 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : f.status === 'failed' ? (
+                      <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    ) : null}
+                  </div>
+                ))}
+                {topicFiles.length > 3 && !showAllFiles && (
+                  <button
+                    onClick={() => setShowAllFiles(true)}
+                    className="flex items-center gap-1 bg-dark-700 border border-dark-500 rounded-lg px-3 py-2 text-sm text-accent-primary hover:bg-dark-600"
+                  >
+                    +{topicFiles.length - 3} more
+                  </button>
+                )}
+                {showAllFiles && topicFiles.length > 3 && (
+                  <button
+                    onClick={() => setShowAllFiles(false)}
+                    className="flex items-center gap-1 bg-dark-700 border border-dark-500 rounded-lg px-3 py-2 text-sm text-gray-400 hover:bg-dark-600"
+                  >
+                    Show less
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Upload in progress indicator */}
+        {isUploading && (
+          <div className="px-4 pt-2">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center gap-2 text-sm text-blue-300">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span>Uploading file...</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <ChatInput
+          onSend={onSendMessage}
+          onUpload={hasContext || subjects.length > 0 ? handleUploadClick : undefined}
+          disabled={subjects.length === 0}
+          isLoading={isLoading}
+          placeholder={hasContext ? `Message about ${context.topic?.title}...` : "Type a message..."}
+        />
+      </div>
 
       {/* Location Picker Modal */}
       {showLocationPicker && (
