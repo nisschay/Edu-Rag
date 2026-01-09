@@ -23,6 +23,10 @@ class ChatRequest(BaseModel):
     """Request schema for chat endpoint."""
     
     message: str = Field(..., min_length=1, description="User's message")
+    subject_id: int | None = Field(
+        default=None, 
+        description="Optional subject scope"
+    )
     unit_id: int | None = Field(
         default=None, 
         description="Optional unit scope"

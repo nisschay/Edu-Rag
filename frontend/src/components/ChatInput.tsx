@@ -9,12 +9,13 @@ import { useState, useRef, useEffect } from 'react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
+  onUpload?: () => void; // Optional upload handler
   disabled: boolean;
   placeholder?: string;
   isLoading?: boolean;
 }
 
-export function ChatInput({ onSend, disabled, placeholder, isLoading }: ChatInputProps) {
+export function ChatInput({ onSend, onUpload, disabled, placeholder, isLoading }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -45,7 +46,27 @@ export function ChatInput({ onSend, disabled, placeholder, isLoading }: ChatInpu
   return (
     <form onSubmit={handleSubmit} className="p-4 border-t border-dark-600 bg-dark-800">
       <div className="flex items-end gap-3 max-w-4xl mx-auto">
-        <div className="flex-1 relative">
+        <div className="flex-1 relative flex gap-2">
+          {/* Upload Button */}
+          {onUpload && (
+            <button
+              type="button"
+              onClick={onUpload}
+              disabled={disabled || isLoading}
+              className={`p-3 rounded-xl transition-colors shrink-0
+                ${disabled || isLoading
+                  ? 'bg-dark-700 text-gray-500 cursor-not-allowed'
+                  : 'bg-dark-700 text-gray-300 hover:bg-dark-600 hover:text-white border border-dark-500'
+                }`}
+              title="Upload material"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </button>
+          )}
+
           <textarea
             ref={textareaRef}
             value={message}
@@ -62,7 +83,7 @@ export function ChatInput({ onSend, disabled, placeholder, isLoading }: ChatInpu
               transition-colors`}
           />
         </div>
-        
+
         <button
           type="submit"
           disabled={disabled || !message.trim() || isLoading}

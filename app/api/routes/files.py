@@ -4,11 +4,13 @@ File upload API routes.
 Provides endpoints for uploading and managing files attached to topics.
 """
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status, BackgroundTasks
 
 from app.api.deps import CurrentUser, DbSession
 from app.schemas.file import FileList, FileRead, FileWithText, UploadResponse
-from app.services import subject_service, unit_service, topic_service, file_service
+from app.services import subject_service, unit_service, topic_service, file_service, processing_service
+from app.models.unit_processing_state import UnitProcessingState
+from app.models.unit import Unit
 from app.utils.text_extraction import (
     extract_text,
     get_file_extension,
@@ -80,6 +82,7 @@ def validate_topic_ownership(
 async def upload_file(
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
     subject_id: int,
     unit_id: int,
     topic_id: int,
@@ -91,27 +94,8 @@ async def upload_file(
     The file will be:
     1. Validated for type and size
     2. Saved to disk
-    3. Text extracted
-    4. Metadata stored in database
-    
-    Example Request:
-        POST /api/v1/subjects/1/units/1/topics/1/files
-        Content-Type: multipart/form-data
-        file: (binary file data)
-        
-    Example Response:
-        {
-            "message": "File uploaded successfully",
-            "file": {
-                "id": 1,
-                "topic_id": 1,
-                "filename": "lecture_notes.pdf",
-                "file_type": "pdf",
-                "file_size": 102400,
-                "created_at": "2026-01-06T12:00:00"
-            },
-            "text_preview": "Chapter 1: Introduction to..."
-        }
+    3. Metadata stored in database (status: pending)
+    4. Processing task added to background queue
     """
     # Validate ownership chain
     validate_topic_ownership(db, subject_id, unit_id, topic_id, current_user.id)
@@ -159,18 +143,7 @@ async def upload_file(
             detail="Failed to save file",
         )
     
-    # Extract text
-    extracted_text = None
-    try:
-        extracted_text = extract_text(content, file.filename)
-        logger.info(f"Extracted {len(extracted_text)} characters from {file.filename}")
-    except ExtractionError as e:
-        logger.warning(f"Text extraction failed for {file.filename}: {e}")
-        # Continue without extracted text - file is still saved
-    except Exception as e:
-        logger.error(f"Unexpected extraction error: {e}")
-    
-    # Create database record
+    # Create database record (status: pending - conceptually, but strictly controlled by Unit State)
     db_file = file_service.create_file(
         db=db,
         topic_id=topic_id,
@@ -178,19 +151,67 @@ async def upload_file(
         filepath=str(filepath),
         file_type=file_type,
         file_size=file_size,
-        extracted_text=extracted_text,
     )
     
-    # Prepare response
-    text_preview = ""
-    if extracted_text:
-        text_preview = extracted_text[:500] + ("..." if len(extracted_text) > 500 else "")
+    # --- CRITICAL: Unit State Update ---
+    # 1. Get Unit
+    unit = unit_service.get_unit_for_subject(db, unit_id, subject_id) # Validated above but need object
     
+    # 2. Get/Create State
+    if not unit.processing_state:
+        unit.processing_state = UnitProcessingState(unit_id=unit.id)
+        db.add(unit.processing_state)
+        db.commit()
+    
+    # 3. Set Status = UPLOADED
+    unit.processing_state.status = "uploaded"
+    unit.processing_state.has_files = True
+    # Clear error on new upload
+    unit.processing_state.last_error = None
+    db.commit()
+    
+    # 4. Trigger Unit Background Processing
+    # We cancel any existing tasks implicitly by overwriting status? 
+    # Background task will check status but strict serial pipeline means we just start a new one.
+    # Ideally we'd kill old one but for now we just launch new one.
+    background_tasks.add_task(processing_service.process_unit_background, unit.id)
+    
+    logger.info(f"Upload: File {db_file.id} saved. Unit {unit_id} marked 'uploaded'. Pipeline triggered.")
+
     return UploadResponse(
-        message="File uploaded successfully",
+        message="File uploaded. Unit processing started.",
         file=FileRead.model_validate(db_file),
-        text_preview=text_preview,
+        text_preview="Processing in background...",
     )
+
+
+@router.get(
+    "/{file_id}/status",
+    response_model=FileRead,
+    summary="Get File Status",
+    description="Check the processing status of a file.",
+)
+def get_file_status(
+    db: DbSession,
+    current_user: CurrentUser,
+    subject_id: int,
+    unit_id: int,
+    topic_id: int,
+    file_id: int,
+) -> FileRead:
+    """
+    Check the processing status of a file.
+    """
+    validate_topic_ownership(db, subject_id, unit_id, topic_id, current_user.id)
+    
+    file = file_service.get_file_for_topic(db, file_id, topic_id)
+    if file is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
+    
+    return FileRead.model_validate(file)
 
 
 @router.get(

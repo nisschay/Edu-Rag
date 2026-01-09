@@ -32,6 +32,8 @@ class FileRead(FileBase):
     topic_id: int
     file_type: str
     file_size: int
+    status: str
+    processing_error: str | None = None
     created_at: datetime
     
     model_config = {"from_attributes": True}

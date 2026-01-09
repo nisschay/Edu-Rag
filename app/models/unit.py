@@ -48,6 +48,13 @@ class Unit(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    processing_state: Mapped["UnitProcessingState"] = relationship(
+        "UnitProcessingState",
+        back_populates="unit",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        uselist=False, # One-to-one
+    )
     
     def __repr__(self) -> str:
         return f"<Unit(id={self.id}, unit_number={self.unit_number}, title='{self.title}')>"

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     Future Phase Placeholders:
         - GOOGLE_CLIENT_ID: For OAuth integration
         - GOOGLE_CLIENT_SECRET: For OAuth integration
-        - OPENAI_API_KEY: For LLM integration
+        - GEMINI_API_KEY: For Gemini LLM integration
         - VECTOR_DB_URL: For RAG retrieval
     """
     
@@ -47,10 +47,16 @@ class Settings(BaseSettings):
     # SQLite for development, easily swappable to PostgreSQL
     DATABASE_URL: str = "sqlite:///./education_rag.db"
     
-    # OpenAI Settings (Phase 3-4)
+    # Google Gemini Settings
+    GEMINI_API_KEY: str = ""
+    # LLM Model
+    GEMINI_MODEL: str = "gemini-2.0-flash"
+    # Embedding Model
+    EMBEDDING_MODEL: str = "models/text-embedding-004"
+    EMBEDDING_DIMENSION: int = 768
+    
+    # OpenAI Settings (Deprecated/Fallback)
     OPENAI_API_KEY: str = ""
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_DIMENSION: int = 1536
     
     # Vector Store Settings
     FAISS_INDEX_PATH: str = "data/faiss/index.faiss"

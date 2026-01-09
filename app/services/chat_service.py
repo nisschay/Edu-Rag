@@ -12,11 +12,13 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.topic import Topic
 from app.models.unit import Unit
 from app.models.subject import Subject
+from app.models.file import File
 from app.services import retrieval_service, summary_service
 from app.utils.embeddings import embed_text
 from app.utils.summary_vector_store import (
@@ -82,23 +84,78 @@ class ChatResult:
     context_tokens: int
 
 
+def _check_scope_ready(
+    db: Session,
+    subject_id: int | None = None,
+    unit_id: int | None = None,
+    topic_id: int | None = None,
+) -> tuple[bool, str | None]:
+    """
+    Check if the materials in the given scope are ready for chat.
+    
+    Returns:
+        Tuple of (is_ready, message_if_not_ready)
+    """
+    from sqlalchemy import or_
+    
+    # Base query for files
+    stmt = select(File)
+    
+    if topic_id:
+        stmt = stmt.where(File.topic_id == topic_id)
+    elif unit_id:
+        # Get all topics for unit
+        topic_ids = db.scalars(select(Topic.id).where(Topic.unit_id == unit_id)).all()
+        if not topic_ids:
+            return True, None # No topics, so technically nothing to wait for
+        stmt = stmt.where(File.topic_id.in_(topic_ids))
+    elif subject_id:
+        # Get all units for subject
+        unit_ids = db.scalars(select(Unit.id).where(Unit.subject_id == subject_id)).all()
+        if not unit_ids:
+            return True, None
+        # Get all topics for units
+        topic_ids = db.scalars(select(Topic.id).where(Topic.unit_id.in_(unit_ids))).all()
+        if not topic_ids:
+            return True, None
+        stmt = stmt.where(File.topic_id.in_(topic_ids))
+    else:
+        return True, None
+
+    files = db.scalars(stmt).all()
+    if not files:
+        return True, None # No files uploaded yet
+    
+    # Check if any file is pending or processing
+    processing_files = [f for f in files if f.status in ("pending", "processing")]
+    if processing_files:
+        return False, "Your material is still being processed. Try again shortly."
+    
+    # If all failed
+    if all(f.status == "failed" for f in files):
+        return False, "The uploaded material failed to process. Please try re-uploading."
+        
+    return True, None
+
+
 # =============================================================================
 # INTENT CLASSIFICATION
 # =============================================================================
 
-def classify_intent(message: str) -> IntentType:
+def classify_intent(
+    message: str,
+    subject_name: str = "Unknown",
+    unit_title: str = "Unknown",
+    topic_title: str = "Unknown",
+) -> IntentType:
     """
     Classify user intent from their message.
     
-    Intent types:
-    - teach_from_start: User wants to learn a topic from scratch
-    - explain_topic: User wants a summary/overview of a topic
-    - explain_detail: User wants specific details or clarification
-    - revise: User wants to review or refresh knowledge
-    - generate_questions: User wants practice questions
-    
     Args:
         message: The user's message text.
+        subject_name: Name of the subject.
+        unit_title: Title of the unit.
+        topic_title: Title of the topic.
         
     Returns:
         The classified intent type.
@@ -108,12 +165,12 @@ def classify_intent(message: str) -> IntentType:
     llm = get_llm_generator()
     
     # Use LLM for intent classification
-    prompt = INTENT_CLASSIFICATION_PROMPT.format(message=message)
-    
-    raw_intent = llm.classify_intent(prompt)
-    
-    # Normalize and validate
-    intent = raw_intent.strip().lower().replace(" ", "_")
+    prompt = INTENT_CLASSIFICATION_PROMPT.format(
+        message=message,
+        subject_name=subject_name,
+        unit_title=unit_title,
+        topic_title=topic_title,
+    )
     
     valid_intents = [
         "teach_from_start",
@@ -122,6 +179,11 @@ def classify_intent(message: str) -> IntentType:
         "revise",
         "generate_questions",
     ]
+    
+    raw_intent = llm.classify_intent(prompt, valid_intents)
+    
+    # Normalize and validate
+    intent = raw_intent.strip().lower().replace(" ", "_")
     
     if intent not in valid_intents:
         logger.warning(f"Invalid intent '{intent}', defaulting to explain_topic")
@@ -272,10 +334,10 @@ def _retrieve_raw_chunks(
     chunks = retrieval_service.retrieve_chunks(
         db=db,
         user_id=user_id,
+        query=query,
         subject_id=subject_id,
         unit_id=unit_id,
         topic_id=topic_id,
-        query=query,
         top_k=top_k,
     )
     
@@ -396,18 +458,24 @@ def _generate_response(
     intent: IntentType,
     context: str,
     message: str,
-    topic_name: str | None = None,
-    unit_name: str | None = None,
+    subject_name: str | None = None,
+    unit_title: str | None = None,
+    topic_title: str | None = None,
+    summary_context: str = "",
+    chunk_context: str = "",
 ) -> str:
     """
     Generate LLM response based on intent and context.
     
     Args:
         intent: The classified intent.
-        context: Retrieved context text.
+        context: Retrieved context text (mapped to 'context' or 'summary_context' etc).
         message: User's original message.
-        topic_name: Optional topic name for context.
-        unit_name: Optional unit name for context.
+        subject_name: Optional subject name.
+        unit_title: Optional unit title.
+        topic_title: Optional topic title.
+        summary_context: For explain_topic intent.
+        chunk_context: For explain_topic intent.
         
     Returns:
         The generated response text.
@@ -417,12 +485,16 @@ def _generate_response(
     llm = get_llm_generator()
     template = _get_prompt_template(intent)
     
-    # Build the prompt
+    # Build the prompt with all possible fields
+    # Different templates use different keys, but we provide all common ones
     prompt = template.format(
         context=context,
-        question=message,
-        topic_name=topic_name or "the topic",
-        unit_name=unit_name or "the unit",
+        summary_context=summary_context or context,
+        chunk_context=chunk_context,
+        message=message,
+        subject_name=subject_name or "the subject",
+        unit_title=unit_title or "the unit",
+        topic_title=topic_title or "the topic",
     )
     
     response = llm.generate_chat_response(prompt)
@@ -480,28 +552,38 @@ def chat(
     )
     logger.info(f"Message: {message[:200]}...")
     
+    # Get topic/unit names for prompts
+    topic_title = "Unknown Topic"
+    unit_title = "Unknown Unit"
+    subject_name = "Unknown Subject"
+    
+    subject = db.get(Subject, subject_id)
+    if subject:
+        subject_name = subject.name
+
+    if topic_id:
+        topic = db.get(Topic, topic_id)
+        if topic:
+            topic_title = topic.title
+            unit_id = topic.unit_id
+    
+    if unit_id:
+        unit = db.get(Unit, unit_id)
+        if unit:
+            unit_title = unit.title
+    
     # Step 1: Classify intent
-    intent = classify_intent(message)
+    intent = classify_intent(
+        message=message,
+        subject_name=subject_name,
+        unit_title=unit_title,
+        topic_title=topic_title
+    )
     
     # Step 2: Retrieve context based on intent
     context = ""
     sources: list[Source] = []
     context_tokens = 0
-    
-    # Get topic/unit names for prompts
-    topic_name = None
-    unit_name = None
-    
-    if topic_id:
-        topic = db.get(Topic, topic_id)
-        if topic:
-            topic_name = topic.title
-            unit_id = topic.unit_id  # Ensure unit_id is set from topic
-    
-    if unit_id:
-        unit = db.get(Unit, unit_id)
-        if unit:
-            unit_name = unit.title
     
     # Select retrieval strategy based on intent
     if intent == "teach_from_start":
@@ -612,8 +694,9 @@ def chat(
         intent=intent,
         context=context,
         message=message,
-        topic_name=topic_name,
-        unit_name=unit_name,
+        subject_name=subject_name,
+        unit_title=unit_title,
+        topic_title=topic_title,
     )
     
     result = ChatResult(
@@ -629,3 +712,220 @@ def chat(
     )
     
     return result
+
+
+def _chat_global(
+    db: Session,
+    user_id: int,
+    message: str,
+) -> ChatResult:
+    """
+    Perform a global chat across all user materials.
+    """
+    logger.info(f"Global chat for user {user_id}: {message[:100]}...")
+    
+    # 1. Classify intent
+    intent = classify_intent(
+        message=message,
+        subject_name="All Subjects",
+        unit_title="All Units",
+        topic_title="All Topics"
+    )
+    
+    # 2. Retrieve context (always use topic summaries for global for better relevance/speed balance)
+    results, sources = _retrieve_topic_summaries(
+        user_id=user_id,
+        subject_id=None,
+        unit_id=None,
+        topic_id=None,
+        query=message,
+        top_k=5,
+    )
+    
+    context, context_tokens = _build_context_from_topic_summaries(results, db)
+    
+    if not context:
+        # Fallback to Unit Summaries
+        results, sources = _retrieve_unit_summaries(
+            user_id=user_id,
+            subject_id=None,
+            unit_id=None,
+            query=message,
+            top_k=3,
+        )
+        context, context_tokens = _build_context_from_unit_summaries(results, db)
+    
+    if not context:
+        return ChatResult(
+            answer="I couldn't find any relevant information in your uploaded materials. Could you please provide more details or upload more content?",
+            intent=intent,
+            sources=[],
+            context_tokens=0,
+        )
+    
+    # 3. Generate response
+    answer = _generate_response(
+        intent=intent,
+        context=context,
+        message=message,
+        subject_name="Your Materials",
+        unit_title="Multiple Units",
+        topic_title="Multiple Topics",
+    )
+    
+    return ChatResult(
+        answer=answer,
+        intent=intent,
+        sources=sources,
+        context_tokens=context_tokens,
+    )
+
+
+def chat_flexible(
+    db: Session,
+    user_id: int,
+    message: str,
+    subject_id: int | None = None,
+    unit_id: int | None = None,
+    topic_id: int | None = None,
+) -> ChatResult:
+    """
+    Process a chat message with flexible scoping and graceful fallbacks.
+    """
+    # 0. Check scope readiness
+    is_ready, ready_message = _check_scope_ready(db, subject_id, unit_id, topic_id)
+    if not is_ready:
+        return ChatResult(
+            answer=ready_message or "Processing...",
+            intent="explain_topic",
+            sources=[],
+            context_tokens=0,
+        )
+
+    # Check if we have ANY ready material at all if no scope
+    if not subject_id and not unit_id and not topic_id:
+        logger.info("No scope provided, checking for any ready materials")
+        # Check if user has any ready files
+        has_ready = db.scalars(select(File).where(File.status == "ready")).first() is not None
+        if not has_ready:
+            return ChatResult(
+                answer="Welcome! I'm ready to help. To get started, you can create a subject and upload some study materials, or just ask me a general question if you've already uploaded something!",
+                intent="explain_topic",
+                sources=[],
+                context_tokens=0,
+            )
+        
+        # If we have materials, proceed to a global search (handing off to chat() with special scope)
+        # Note: chat() currently requires subject_id. We'll modify it or handle it here.
+        return _chat_global(db, user_id, message)
+
+    # Case 1: Topic provided - Use existing logic
+    if topic_id:
+        try:
+            return chat(db, user_id, subject_id or 0, message, unit_id, topic_id)
+        except Exception as e:
+            logger.error(f"Topic chat failed: {e}")
+            # Fallback to unit/subject if topic fails
+            if not unit_id and not subject_id:
+                return ChatResult(
+                    answer="I encountered an issue accessing that topic. Please try another one or check back later.",
+                    intent="explain_topic",
+                    sources=[],
+                    context_tokens=0,
+                )
+
+    # Infer subject_id if missing but lower scope exists
+    if not subject_id:
+        if unit_id:
+            unit = db.get(Unit, unit_id)
+            if unit:
+                subject_id = unit.subject_id
+            else:
+                 return ChatResult(
+                    answer="I couldn't find that unit. Please select a valid unit.",
+                    intent="explain_topic",
+                    sources=[],
+                    context_tokens=0,
+                )
+    
+    # Case 2: Unit provided (no topic)
+    if unit_id:
+        # Retrieve unit summaries
+        results, sources = _retrieve_unit_summaries(
+            user_id=user_id,
+            subject_id=subject_id,
+            unit_id=unit_id,
+            query=message,
+            top_k=3,
+        )
+        context, tokens = _build_context_from_unit_summaries(results, db)
+        
+        if not context:
+             return ChatResult(
+                answer="No study material has been uploaded for this unit yet. Try uploading some content!",
+                intent="explain_topic",
+                sources=[],
+                context_tokens=0,
+            )
+            
+        # Generate answer
+        answer = _generate_response(
+            intent="explain_topic",
+            context=context,
+            message=message,
+            unit_name=db.get(Unit, unit_id).title,
+            topic_name=None,
+        )
+        
+        return ChatResult(
+            answer=answer,
+            intent="explain_topic",
+            sources=sources,
+            context_tokens=tokens,
+        )
+
+    # Case 3: Subject only (no unit/topic)
+    # Use broad retrieval across the subject
+    
+    # Check if subject has any content
+    subject = db.get(Subject, subject_id)
+    if not subject:
+         return ChatResult(
+            answer="That subject doesn't seem to exist. Please create one to get started.",
+            intent="explain_topic",
+            sources=[],
+            context_tokens=0,
+        )
+        
+    # Retrieve top unit summaries for the subject
+    results, sources = _retrieve_unit_summaries(
+        user_id=user_id,
+        subject_id=subject_id,
+        unit_id=None, # Search all units in subject
+        query=message,
+        top_k=5,
+    )
+    context, tokens = _build_context_from_unit_summaries(results, db)
+    
+    if not context:
+         return ChatResult(
+            answer=f"No material uploaded for {subject.name} yet. Upload some units and topics to start learning!",
+            intent="explain_topic",
+            sources=[],
+            context_tokens=0,
+        )
+        
+    answer = _generate_response(
+        intent="teach_from_start",
+        context=context,
+        message=message,
+        unit_name=None,
+        topic_name=None,
+    )
+    
+    return ChatResult(
+        answer=answer,
+        intent="teach_from_start",
+        sources=sources,
+        context_tokens=tokens,
+    )

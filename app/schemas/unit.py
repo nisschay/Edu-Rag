@@ -32,6 +32,19 @@ class UnitCreate(UnitBase):
     )
 
 
+class UnitState(BaseModel):
+    """Schema for unit processing state."""
+    
+    status: str
+    has_files: bool
+    text_extracted: bool
+    chunk_count: int
+    embeddings_ready: bool
+    last_error: str | None = None
+    
+    model_config = {"from_attributes": True}
+
+
 class UnitRead(UnitBase):
     """
     Schema for reading unit data.
@@ -42,7 +55,12 @@ class UnitRead(UnitBase):
             "subject_id": 1,
             "unit_number": 1,
             "title": "Introduction to Algorithms",
-            "created_at": "2026-01-06T12:00:00"
+            "created_at": "2026-01-06T12:00:00",
+            "processing_state": {
+                "status": "ready",
+                "has_files": true,
+                ...
+            }
         }
     """
     
@@ -50,6 +68,9 @@ class UnitRead(UnitBase):
     subject_id: int
     unit_number: int
     created_at: datetime
+    
+    # Optional because it might not exist yet (though we should auto-create it)
+    processing_state: UnitState | None = None
     
     model_config = {"from_attributes": True}
 

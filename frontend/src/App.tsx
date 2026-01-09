@@ -3,6 +3,7 @@
  * 
  * Two-panel layout with sidebar navigation and chat window.
  * Manages state for subjects, context, and chat history.
+ * Supports flexible chat scopes (subject/unit/topic).
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -32,10 +33,11 @@ function App() {
   const [chatHistories, setChatHistories] = useState<Record<number, Message[]>>({});
   const [isLoadingChat, setIsLoadingChat] = useState(false);
 
-  // Get current messages for selected topic
-  const currentMessages = context.topic
-    ? chatHistories[context.topic.id] || []
-    : [];
+  // Chat history key: topic_id or 'global' if no topic
+  const activeChatKey = context.topic?.id || 0;
+
+  // Get current messages for selected scope
+  const currentMessages = chatHistories[activeChatKey] || [];
 
   // Load subjects on mount
   useEffect(() => {
@@ -188,7 +190,7 @@ function App() {
 
   const handleSendMessage = useCallback(
     async (messageText: string) => {
-      if (!context.subject || !context.topic) return;
+      // Allow sending without specific context - backend handles fallback
 
       const userMessage: Message = {
         id: crypto.randomUUID(),
@@ -198,18 +200,20 @@ function App() {
       };
 
       // Add user message to history
+      const key = context.topic?.id || 0;
       setChatHistories((prev) => ({
         ...prev,
-        [context.topic!.id]: [...(prev[context.topic!.id] || []), userMessage],
+        [key]: [...(prev[key] || []), userMessage],
       }));
 
       setIsLoadingChat(true);
 
       try {
-        const response = await api.sendMessage(context.subject.id, {
+        const response = await api.sendMessage({
           message: messageText,
+          subject_id: context.subject?.id || null,
           unit_id: context.unit?.id || null,
-          topic_id: context.topic.id,
+          topic_id: context.topic?.id || null,
         });
 
         const assistantMessage: Message = {
@@ -223,7 +227,7 @@ function App() {
         // Add assistant message to history
         setChatHistories((prev) => ({
           ...prev,
-          [context.topic!.id]: [...(prev[context.topic!.id] || []), assistantMessage],
+          [key]: [...(prev[key] || []), assistantMessage],
         }));
       } catch (error) {
         console.error('Chat error:', error);
@@ -234,13 +238,13 @@ function App() {
           content:
             error instanceof Error
               ? `Error: ${error.message}`
-              : 'Something went wrong. Please try again.',
+              : 'I encountered an issue connecting to the server. Please check your connection and try again.',
           timestamp: new Date(),
         };
 
         setChatHistories((prev) => ({
           ...prev,
-          [context.topic!.id]: [...(prev[context.topic!.id] || []), errorMessage],
+          [key]: [...(prev[key] || []), errorMessage],
         }));
       } finally {
         setIsLoadingChat(false);
@@ -270,6 +274,7 @@ function App() {
         <ChatWindow
           messages={currentMessages}
           context={context}
+          subjects={subjects}
           onSendMessage={handleSendMessage}
           isLoading={isLoadingChat}
         />

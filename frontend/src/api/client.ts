@@ -4,7 +4,7 @@
  * All requests include x-user-id header for auth stub
  */
 
-import type { Subject, Unit, Topic, ChatRequest, ChatResponse } from '../types';
+import type { Subject, Unit, Topic, File, ChatRequest, ChatResponse } from '../types';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
@@ -20,7 +20,7 @@ async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
-  
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     'x-user-id': String(currentUserId),
@@ -76,6 +76,10 @@ export async function createUnit(
   });
 }
 
+export async function getUnit(subjectId: number, unitId: number): Promise<Unit> {
+  return apiRequest<Unit>(`/subjects/${subjectId}/units/${unitId}`);
+}
+
 // ============================================================================
 // Topics API
 // ============================================================================
@@ -103,10 +107,10 @@ export async function createTopic(
 // ============================================================================
 
 export async function sendMessage(
-  subjectId: number,
   request: ChatRequest
 ): Promise<ChatResponse> {
-  return apiRequest<ChatResponse>(`/subjects/${subjectId}/chat`, {
+  // Use new flexible endpoint
+  return apiRequest<ChatResponse>('/chat', {
     method: 'POST',
     body: JSON.stringify(request),
   });
@@ -120,13 +124,13 @@ export async function uploadFile(
   subjectId: number,
   unitId: number,
   topicId: number,
-  file: File
-): Promise<{ id: number; filename: string }> {
+  file: File | globalThis.File
+): Promise<{ message: string; file: any }> {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('file', file as any);
 
   const url = `${API_BASE}/subjects/${subjectId}/units/${unitId}/topics/${topicId}/files`;
-  
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -143,29 +147,26 @@ export async function uploadFile(
   return response.json();
 }
 
-// ============================================================================
-// Processing API (Chunk & Embed)
-// ============================================================================
+export async function getFileStatus(
+  subjectId: number,
+  unitId: number,
+  topicId: number,
+  fileId: number
+): Promise<any> {
+  return apiRequest(`/subjects/${subjectId}/units/${unitId}/topics/${topicId}/files/${fileId}/status`);
+}
 
-export async function processChunks(
+export async function getFiles(
   subjectId: number,
   unitId: number,
   topicId: number
-): Promise<{ chunks_created: number }> {
-  return apiRequest(`/subjects/${subjectId}/units/${unitId}/topics/${topicId}/chunk`, {
-    method: 'POST',
-  });
+): Promise<{ files: any[]; count: number }> {
+  return apiRequest(`/subjects/${subjectId}/units/${unitId}/topics/${topicId}/files`);
 }
 
-export async function embedChunks(
-  subjectId: number,
-  unitId: number,
-  topicId: number
-): Promise<{ chunks_embedded: number }> {
-  return apiRequest(`/subjects/${subjectId}/units/${unitId}/topics/${topicId}/embed`, {
-    method: 'POST',
-  });
-}
+// Obsolete: Handled in background now
+// export async function processChunks(...)
+// export async function embedChunks(...)
 
 // ============================================================================
 // Summary API

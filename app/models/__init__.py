@@ -16,6 +16,7 @@ from app.models.topic import Topic
 from app.models.file import File
 from app.models.chunk import Chunk
 from app.models.summary import TopicSummary, UnitSummary
+from app.models.unit_processing_state import UnitProcessingState
 
 __all__ = [
     "User",
@@ -26,4 +27,5 @@ __all__ = [
     "Chunk",
     "TopicSummary",
     "UnitSummary",
+    "UnitProcessingState",
 ]

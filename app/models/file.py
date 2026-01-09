@@ -42,6 +42,8 @@ class File(Base):
     file_type: Mapped[str] = mapped_column(String(10))
     file_size: Mapped[int] = mapped_column()
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, processing, ready, failed
+    processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     
     # Relationships

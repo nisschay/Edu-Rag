@@ -140,10 +140,10 @@ def embed_topic_chunks(
 def retrieve_chunks(
     db: Session,
     user_id: int,
-    subject_id: int,
-    unit_id: int,
-    topic_id: int,
     query: str,
+    subject_id: int | None = None,
+    unit_id: int | None = None,
+    topic_id: int | None = None,
     top_k: int = 5,
 ) -> list[RetrievedChunk]:
     """
@@ -158,10 +158,10 @@ def retrieve_chunks(
     Args:
         db: Database session.
         user_id: User ID (required for filtering).
-        subject_id: Subject ID (required for filtering).
-        unit_id: Unit ID (required for filtering).
-        topic_id: Topic ID (required for filtering).
         query: Search query text.
+        subject_id: Optional Subject ID.
+        unit_id: Optional Unit ID.
+        topic_id: Optional Topic ID.
         top_k: Number of results to return (default 5).
         
     Returns:
@@ -174,8 +174,8 @@ def retrieve_chunks(
         raise ValueError("Query cannot be empty")
     
     logger.info(
-        f"Retrieving chunks for query in topic {topic_id}, "
-        f"user {user_id}, subject {subject_id}, unit {unit_id}"
+        f"Retrieving chunks for query (scope: sub={subject_id}, unit={unit_id}, topic={topic_id}), "
+        f"user {user_id}"
     )
     
     # Embed the query

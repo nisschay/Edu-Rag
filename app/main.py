@@ -22,7 +22,7 @@ from app.db.base import Base
 from app.db.session import engine
 
 # Import models to ensure they are registered with SQLAlchemy
-from app.models import User, Subject, Unit, Topic, File, Chunk, TopicSummary, UnitSummary  # noqa: F401
+from app.models import User, Subject, Unit, Topic, File, Chunk, TopicSummary, UnitSummary, UnitProcessingState  # noqa: F401
 
 # Initialize logging
 setup_logging()

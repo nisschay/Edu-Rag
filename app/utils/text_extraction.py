@@ -147,10 +147,11 @@ EXTRACTORS: dict[str, type[TextExtractor]] = {
     "pptx": PPTXExtractor,
     "ppt": PPTXExtractor,  # Try to handle .ppt as .pptx (may not work for old format)
     "txt": TXTExtractor,
+    "md": TXTExtractor,
 }
 
 # Supported file extensions
-SUPPORTED_EXTENSIONS = {"pdf", "docx", "pptx", "ppt", "txt"}
+SUPPORTED_EXTENSIONS = {"pdf", "docx", "pptx", "ppt", "txt", "md"}
 
 
 def get_file_extension(filename: str) -> str:

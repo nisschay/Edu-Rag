@@ -221,7 +221,7 @@ def test_retrieval(
     5. Returns top-k matching chunks
     
     Debug endpoint for testing retrieval logic.
-    Requires OPENAI_API_KEY to be configured.
+    Requires google key to be configured.
     """
     logger.info(
         f"Retrieval request: user={current_user.id}, subject={subject_id}, "

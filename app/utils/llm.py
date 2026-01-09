@@ -10,48 +10,64 @@ This module provides OpenAI LLM integration for:
 import logging
 from typing import Literal
 
-import openai
+import google.generativeai as genai
 
 from app.core.config import get_settings
+from app.utils.retry_utils import retry_on_exception
 
 logger = logging.getLogger(__name__)
 
-# Default model for chat completions
-DEFAULT_CHAT_MODEL = "gpt-4o-mini"
+# Default model for Google Gemini
+DEFAULT_CHAT_MODEL = "gemini-2.5-flash" 
 
 
 class LLMGenerator:
     """
-    OpenAI LLM generator for text generation tasks.
+    Google Gemini LLM generator for text generation tasks.
     
-    Handles chat completions for summarization, classification,
+    Handles content generation for summarization, classification,
     and RAG responses.
     """
     
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = DEFAULT_CHAT_MODEL,
+        model: str | None = None,
     ):
         """
         Initialize the LLM generator.
         
         Args:
-            api_key: OpenAI API key. If None, uses settings.
-            model: Chat model name.
+            api_key: Google API key. If None, uses settings.
+            model: Model name.
         """
         settings = get_settings()
         
-        self.api_key = api_key or settings.OPENAI_API_KEY
-        self.model = model
+        self.api_key = api_key or settings.GEMINI_API_KEY
+        self.model_name = model or settings.GEMINI_MODEL
         
         if not self.api_key:
-            logger.warning("OpenAI API key not configured")
+            logger.warning("Gemini API key not configured")
+        else:
+            genai.configure(api_key=self.api_key)
         
-        self.client = openai.OpenAI(api_key=self.api_key) if self.api_key else None
-        
-        logger.info(f"LLMGenerator initialized with model: {self.model}")
+        logger.info(f"LLMGenerator initialized with model: {self.model_name}")
     
+    @retry_on_exception(max_attempts=2, delay=1.0, backoff=2.0, exceptions=(Exception,))
+    def _generate_content_with_retry(
+        self,
+        full_prompt: str,
+        generation_config: genai.types.GenerationConfig,
+        safety_settings: dict,
+    ):
+        """Internal method to call Gemini with retry logic."""
+        model = genai.GenerativeModel(model_name=self.model_name)
+        return model.generate_content(
+            full_prompt,
+            generation_config=generation_config,
+            safety_settings=safety_settings,
+        )
+
     def generate(
         self,
         prompt: str,
@@ -60,7 +76,7 @@ class LLMGenerator:
         system_message: str | None = None,
     ) -> str:
         """
-        Generate text using the LLM.
+        Generate text using Gemini with retry logic and timeout.
         
         Args:
             prompt: The user prompt.
@@ -74,30 +90,60 @@ class LLMGenerator:
         Raises:
             ValueError: If API key is not configured.
         """
-        if not self.client:
-            raise ValueError("OpenAI API key not configured")
+        if not self.api_key:
+            raise ValueError("Google API key not configured")
         
-        messages = []
-        
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-        
-        messages.append({"role": "user", "content": prompt})
-        
-        logger.debug(f"Generating response with {len(prompt)} char prompt")
-        
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=max_tokens,
+        # Configure generation parameters
+        generation_config = genai.types.GenerationConfig(
+            max_output_tokens=max_tokens,
             temperature=temperature,
         )
         
-        result = response.choices[0].message.content or ""
+        # Build combined prompt if system_message is provided
+        full_prompt = prompt
+        if system_message:
+            full_prompt = f"System Instruction: {system_message}\n\nUser Message: {prompt}"
         
-        logger.debug(f"Generated {len(result)} char response")
+        # Configure safety settings to be more permissive for educational context
+        safety_settings = {
+            genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+        }
         
-        return result.strip()
+        logger.debug(f"Generating Gemini response with {len(full_prompt)} char prompt")
+        
+        try:
+            response = self._generate_content_with_retry(
+                full_prompt=full_prompt,
+                generation_config=generation_config,
+                safety_settings=safety_settings,
+            )
+            
+            try:
+                result = response.text or ""
+            except (ValueError, Exception) as e:
+                logger.warning(f"Gemini response blocked or failed: {e}")
+                # Check if there are candidates but blocked
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    logger.warning(f"Finish reason: {candidate.finish_reason}")
+                return "I apologize, but I cannot provide a response to that query based on the current material."
+                
+            logger.debug(f"Generated {len(result)} char response")
+            return result.strip()
+            
+        except Exception as e:
+            error_str = str(e)
+            logger.error(f"Gemini API Error after retries: {error_str}")
+            
+            # Rate Limit Handling (429)
+            if "429" in error_str or "ResourceExhausted" in error_str or "quota" in error_str.lower():
+                return "The system is busy. Please try again later."
+            
+            # General Error Fallback
+            return "I apologize, but I am unable to process your request at the moment due to a system error."
     
     def classify_intent(
         self,
